@@ -1,0 +1,480 @@
+﻿{
+  "created": "1762812347837",
+  "updated": "1762812347837",
+  "name": "Untitled",
+  "description": "",
+  "tags": [],
+  "pieces": [
+    "@activepieces/piece-schedule",
+    "@activepieces/piece-http",
+    "@activepieces/piece-gmail",
+    "@activepieces/piece-agent"
+  ],
+  "template": {
+    "displayName": "Untitled",
+    "trigger": {
+      "name": "trigger",
+      "valid": true,
+      "displayName": "Every Day",
+      "type": "PIECE_TRIGGER",
+      "settings": {
+        "propertySettings": {
+          "timezone": {
+            "type": "MANUAL"
+          },
+          "hour_of_the_day": {
+            "type": "MANUAL"
+          },
+          "run_on_weekends": {
+            "type": "MANUAL"
+          }
+        },
+        "pieceName": "@activepieces/piece-schedule",
+        "pieceVersion": "~0.1.13",
+        "input": {
+          "timezone": "America/Chicago",
+          "hour_of_the_day": 8,
+          "run_on_weekends": true
+        },
+        "sampleData": {},
+        "triggerName": "every_day"
+      },
+      "nextAction": {
+        "name": "step_2",
+        "skip": false,
+        "type": "PIECE",
+        "valid": true,
+        "settings": {
+          "input": {
+            "url": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum",
+            "body": {},
+            "method": "GET",
+            "headers": {},
+            "authType": "NONE",
+            "stopFlow": false,
+            "body_type": "none",
+            "use_proxy": false,
+            "authFields": {},
+            "failureMode": "continue_none",
+            "queryParams": {
+              "ids": "bitcoin,ethereum,solana",
+              "per_page": "3",
+              "vs_currency": "usd",
+              "price_change_percentage": "1h,24h,7d"
+            },
+            "proxy_settings": {},
+            "response_is_binary": false
+          },
+          "pieceName": "@activepieces/piece-http",
+          "actionName": "send_request",
+          "sampleData": {},
+          "pieceVersion": "~0.9.5",
+          "propertySettings": {
+            "url": {
+              "type": "MANUAL"
+            },
+            "body": {
+              "type": "MANUAL",
+              "schema": {}
+            },
+            "method": {
+              "type": "MANUAL"
+            },
+            "headers": {
+              "type": "MANUAL"
+            },
+            "timeout": {
+              "type": "MANUAL"
+            },
+            "authType": {
+              "type": "MANUAL"
+            },
+            "stopFlow": {
+              "type": "MANUAL"
+            },
+            "body_type": {
+              "type": "MANUAL"
+            },
+            "use_proxy": {
+              "type": "MANUAL"
+            },
+            "authFields": {
+              "type": "MANUAL",
+              "schema": {}
+            },
+            "failureMode": {
+              "type": "MANUAL"
+            },
+            "queryParams": {
+              "type": "MANUAL"
+            },
+            "proxy_settings": {
+              "type": "MANUAL",
+              "schema": {}
+            },
+            "response_is_binary": {
+              "type": "MANUAL"
+            }
+          },
+          "errorHandlingOptions": {
+            "retryOnFailure": {
+              "value": false
+            },
+            "continueOnFailure": {
+              "value": false
+            }
+          }
+        },
+        "nextAction": {
+          "name": "step_6",
+          "skip": false,
+          "type": "CODE",
+          "valid": true,
+          "settings": {
+            "input": {
+              "coingecko_json": "{{step_2}}"
+            },
+            "sampleData": {},
+            "sourceCode": {
+              "code": "export const code = async (inputs: any) => {\n  // Accept either the full HTTP step object or just the body string\n  let rawBody: any = null;\n\n  const src = inputs?.coingecko_json;\n  if (src && typeof src === 'object' && !Array.isArray(src)) {\n    // likely the whole HTTP step, use its body\n    rawBody = src.body ?? null;\n  } else if (typeof src === 'string') {\n    // likely mapped directly to body\n    rawBody = src;\n  }\n\n  let text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody ?? '');\n\n  // Detect/convert base64 if needed\n  const looksJson = text.trim().startsWith('{') || text.trim().startsWith('[');\n  const looksBase64 = /^[A-Za-z0-9+/=\\s]+$/.test(text) && !looksJson;\n  if (looksBase64) {\n    try { text = Buffer.from(text, 'base64').toString('utf8'); } catch {}\n  }\n\n  // Parse JSON array\n  let arr: any[] = [];\n  try {\n    const parsed = JSON.parse(text);\n    arr = Array.isArray(parsed) ? parsed : [];\n  } catch {\n    // fall through to defaults below\n  }\n\n  // Helper to pick coin rows\n  const pick = (id: string, sym: string) =>\n    arr.find(x => x?.id === id || x?.symbol === sym) ?? {};\n\n  const btc = pick('bitcoin', 'btc');\n  const eth = pick('ethereum', 'eth');\n\n  const fmtNum = (n: any, d = 2) =>\n    typeof n === 'number' && isFinite(n) ? n.toFixed(d) : '-';\n\n  const prices = {\n    btc: {\n      usd: fmtNum(btc.current_price, 0),\n      change_24h_pct: fmtNum(btc.price_change_percentage_24h, 2),\n    },\n    eth: {\n      usd: fmtNum(eth.current_price, 2),\n      change_24h_pct: fmtNum(eth.price_change_percentage_24h, 2),\n    },\n  };\n\n  const asOf = new Date().toISOString();\n  const userText =\n    `As of ${asOf}, prices and 24h change:\\n` +\n    `• BTC: $${prices.btc.usd} (${prices.btc.change_24h_pct}% 24h)\\n` +\n    `• ETH: $${prices.eth.usd} (${prices.eth.change_24h_pct}% 24h)\\n\\n` +\n    `Write a concise \"Daily Crypto Brief\" with:\\n` +\n    `- 3–5 bullets on price action & notable moves\\n` +\n    `- 1-line outlook`;\n\n  return { asOf, userText, prices };\n};",
+              "packageJson": "{}"
+            },
+            "errorHandlingOptions": {
+              "retryOnFailure": {
+                "value": false
+              },
+              "continueOnFailure": {
+                "value": false
+              }
+            }
+          },
+          "nextAction": {
+            "name": "step_4",
+            "skip": false,
+            "type": "PIECE",
+            "valid": true,
+            "settings": {
+              "input": {
+                "url": "https://api.openai.com/v1/responses",
+                "body": {
+                  "data": {
+                    "text": {
+                      "format": {
+                        "type": "text"
+                      }
+                    },
+                    "input": [
+                      {
+                        "role": "system",
+                        "content": [
+                          {
+                            "text": "You are a financial analyst who writes concise daily cryptocurrency briefs. Use only the numbers provided below.",
+                            "type": "input_text"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "text": "{{ steps.format_prompt.userText }}",
+                            "type": "input_text"
+                          },
+                          {
+                            "text": "Data Summary: BTC is {{step_6['prices']['btc']['usd']}} with a {{step_6['prices']['btc']['change_24h_pct']}}% 24h change. ETH is {{step_6['prices']['eth']['usd']}} with a {{step_6['prices']['eth']['change_24h_pct']}}% 24h change.",
+                            "type": "input_text"
+                          },
+                          {
+                            "text": "Output format:\n**Daily Crypto Brief — {{step_6['asOf']}}**\n• Bullet 1\n• Bullet 2\n• Bullet 3\n• Bullet 4\nOutlook: <1 line>",
+                            "type": "input_text"
+                          }
+                        ]
+                      }
+                    ],
+                    "model": "gpt-4o-mini-2024-07-18",
+                    "temperature": 0,
+                    "max_output_tokens": 300
+                  }
+                },
+                "method": "POST",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "{{ OPENAI_API_KEY }}": {
+                    "_comment": "Documentation: Replace the invalid inline comment with a proper string value for the Authorization header. Store the API key securely (e.g., environment variable or secrets manager) and inject it at runtime. In JSON use a string like \"Authorization\": \"Bearer <OPENAI_API_KEY>\" (or the scheme required by the API). Do not commit secrets to version control."
+                  },
+                  "OpenAI-Project": {
+                    "_comment": "Documentation: Replace the invalid inline comment with a proper string value for the OpenAI-Project header. Store the project ID securely (e.g., environment variable or secrets manager) and inject it at runtime. In JSON use a string like \"OpenAI-Project\": \"OpenAI-Project\" (or the scheme required by the API). Do not commit secrets to version control."
+                  }
+                },
+                "authType": "NONE",
+                "stopFlow": false,
+                "body_type": "json",
+                "use_proxy": false,
+                "authFields": {},
+                "failureMode": "continue_none",
+                "queryParams": {},
+                "proxy_settings": {},
+                "response_is_binary": false
+              },
+              "pieceName": "@activepieces/piece-http",
+              "actionName": "send_request",
+              "sampleData": {},
+              "pieceVersion": "~0.9.5",
+              "propertySettings": {
+                "url": {
+                  "type": "MANUAL"
+                },
+                "body": {
+                  "type": "MANUAL",
+                  "schema": {
+                    "data": {
+                      "type": "JSON",
+                      "required": true,
+                      "displayName": "JSON Body"
+                    }
+                  }
+                },
+                "data": {
+                  "type": "MANUAL"
+                },
+                "method": {
+                  "type": "MANUAL"
+                },
+                "headers": {
+                  "type": "MANUAL"
+                },
+                "timeout": {
+                  "type": "MANUAL"
+                },
+                "authType": {
+                  "type": "MANUAL"
+                },
+                "stopFlow": {
+                  "type": "MANUAL"
+                },
+                "body_type": {
+                  "type": "MANUAL"
+                },
+                "use_proxy": {
+                  "type": "MANUAL"
+                },
+                "authFields": {
+                  "type": "MANUAL",
+                  "schema": {}
+                },
+                "failureMode": {
+                  "type": "MANUAL"
+                },
+                "queryParams": {
+                  "type": "MANUAL"
+                },
+                "proxy_settings": {
+                  "type": "MANUAL",
+                  "schema": {}
+                },
+                "response_is_binary": {
+                  "type": "MANUAL"
+                }
+              },
+              "errorHandlingOptions": {
+                "retryOnFailure": {
+                  "value": false
+                },
+                "continueOnFailure": {
+                  "value": false
+                }
+              }
+            },
+            "nextAction": {
+              "name": "step_7",
+              "skip": false,
+              "type": "CODE",
+              "valid": true,
+              "settings": {
+                "input": {
+                  "asOf": "{{step_6['asOf']}}",
+                  "openai_text": "{{step_4['body']['output'][0]['content'][0]['text']}}"
+                },
+                "sampleData": {},
+                "sourceCode": {
+                  "code": "export const code = async (inputs) => {\n  const raw  = String(inputs.openai_text ?? \"\").trim();\n  const asOf = String(inputs.asOf ?? \"\");\n\n  const asOfDate =\n    asOf && asOf.includes(\"T\") ? asOf.split(\"T\")[0] : new Date().toISOString().split(\"T\")[0];\n\n  if (!raw) {\n    const htmlEmpty = `\n      <div style=\"font-family:Arial,Helvetica,sans-serif;line-height:1.5;font-size:14px;\">\n        <p style=\"margin:0 0 8px 0;\"><strong>Daily Crypto Brief - ${asOfDate}</strong></p>\n        <p>No content was generated.</p>\n      </div>\n    `.trim();\n    return { asOf, asOfDate, html: htmlEmpty };\n  }\n\n  // Normalize markdown and whitespace\n  const normalized = raw.replace(/\\*\\*/g, \"\").replace(/\\s+/g, \" \").trim();\n\n  // Start from first \"•\"\n  const start = normalized.indexOf(\"•\");\n  const rest  = start !== -1 ? normalized.slice(start) : normalized;\n\n  // Split bullets\n  const bullets = rest.split(\"•\").map(s => s.trim()).filter(Boolean);\n\n  let outlook = \"\";\n  const mainBullets: string[] = [];\n\n  for (const b0 of bullets) {\n    let b = b0;\n\n    // If \"Outlook:\" appears anywhere in the bullet, split it out\n    const m = b.match(/^(.*?)(?:\\s+)?Outlook:\\s*(.+)$/i);\n    if (m) {\n      const before = m[1].trim();\n      const outTxt = m[2].trim();\n      if (before) mainBullets.push(before);\n      if (outTxt) outlook = outTxt;                // capture outlook\n      continue;\n    }\n\n    // Otherwise keep as a normal bullet\n    if (b) mainBullets.push(b);\n  }\n\n  // Bold the tickers/names\n  const boldify = (s: string) =>\n    s\n      .replace(/Bitcoin\\s*\\(BTC\\)/gi, \"<strong>Bitcoin (BTC)</strong>\")\n      .replace(/Ethereum\\s*\\(ETH\\)/gi, \"<strong>Ethereum (ETH)</strong>\");\n\n  const bulletsHtml = mainBullets.map(b => `<li>${boldify(b)}</li>`).join(\"\");\n  const outlookHtml = outlook ? `<li><strong>Outlook: ${outlook}</strong></li>` : \"\";\n\n  const title = `Daily Crypto Brief - ${asOfDate}`;\n\n  const html = `\n    <div style=\"font-family:Arial,Helvetica,sans-serif;line-height:1.5;font-size:14px;\">\n      <p style=\"margin:0 0 8px 0;\"><strong>${title}</strong></p>\n      <ul style=\"margin:0 0 8px 20px; padding:0;\">\n        ${bulletsHtml}\n        ${outlookHtml}\n      </ul>\n    </div>\n  `.trim();\n\n  return { asOf, asOfDate, html };\n};\n",
+                  "packageJson": "{}"
+                },
+                "errorHandlingOptions": {
+                  "retryOnFailure": {
+                    "value": false
+                  },
+                  "continueOnFailure": {
+                    "value": false
+                  }
+                }
+              },
+              "nextAction": {
+                "name": "step_3",
+                "skip": false,
+                "type": "CODE",
+                "valid": true,
+                "settings": {
+                  "input": {
+                    "to": "malga.abhi29@gmail.com",
+                    "Name": "openai_body",
+                    "from": "malgaabhishek29@gmail.com",
+                    "text": "{{step_4['body']['output'][0]['content'][0]['text']}}",
+                    "subject": "Daily Crypto Brief — {{ steps.format_prompt.asOf }}"
+                  },
+                  "sampleData": {},
+                  "sourceCode": {
+                    "code": "export const code = async (inputs) => {\n  const to = inputs.to;\n  const from = inputs.from;\n  const subject = inputs.subject || \"Daily Crypto Brief\";\n  const text = (inputs.text ?? \"\").toString().trim();\n\n  if (!to || !from) {\n    throw new Error(\"Build MIME: 'to' and 'from' are required inputs.\");\n  }\n  if (!text) {\n    throw new Error(\"Build MIME: 'text' input is empty. Map it from OpenAI response: body.output[0].content[0].text\");\n  }\n\n  const mime = [\n    `From: ${from}`,\n    `To: ${to}`,\n    `Subject: ${subject}`,\n    \"MIME-Version: 1.0\",\n    \"Content-Type: text/plain; charset=UTF-8\",\n    \"\",\n    text\n  ].join(\"\\r\\n\");\n\n  // base64url\n  const raw = Buffer.from(mime, \"utf8\")\n    .toString(\"base64\")\n    .replace(/\\+/g, \"-\")\n    .replace(/\\//g, \"_\")\n    .replace(/=+$/, \"\");\n\n  return { raw, debug: { textLength: text.length, sampleStart: text.slice(0, 60) } };\n};\n",
+                    "packageJson": "{}"
+                  },
+                  "errorHandlingOptions": {
+                    "retryOnFailure": {
+                      "value": false
+                    },
+                    "continueOnFailure": {
+                      "value": false
+                    }
+                  }
+                },
+                "nextAction": {
+                  "name": "step_5",
+                  "skip": false,
+                  "type": "PIECE",
+                  "valid": true,
+                  "settings": {
+                    "input": {
+                      "cc": [],
+                      "bcc": [],
+                      "auth": {
+                    "_comment": "Documentation: Replace the invalid inline comment with a proper string value for the Authorization. Store the API key securely (e.g., environment variable or secrets manager) and inject it at runtime. In JSON use a string like \"Authorization\": \"Gmail API\" (or the scheme required by the API). Do not commit secrets to version control."},
+                      "body": "{{step_7['html']}}",
+                      "draft": false,
+                      "subject": "Daily Crypto Brief — {{step_7['asOfDate']}}",
+                      "receiver": [
+                        "malga.abhi29@gmail.com"
+                      ],
+                      "reply_to": [],
+                      "body_type": "html",
+                      "attachments": []
+                    },
+                    "pieceName": "@activepieces/piece-gmail",
+                    "actionName": "send_email",
+                    "sampleData": {},
+                    "pieceVersion": "~0.9.6",
+                    "propertySettings": {
+                      "cc": {
+                        "type": "MANUAL"
+                      },
+                      "bcc": {
+                        "type": "MANUAL"
+                      },
+                      "auth": {
+                        "type": "MANUAL"
+                      },
+                      "body": {
+                        "type": "MANUAL"
+                      },
+                      "from": {
+                        "type": "MANUAL"
+                      },
+                      "draft": {
+                        "type": "MANUAL"
+                      },
+                      "subject": {
+                        "type": "MANUAL"
+                      },
+                      "receiver": {
+                        "type": "MANUAL"
+                      },
+                      "reply_to": {
+                        "type": "MANUAL"
+                      },
+                      "body_type": {
+                        "type": "MANUAL"
+                      },
+                      "attachments": {
+                        "type": "MANUAL"
+                      },
+                      "in_reply_to": {
+                        "type": "MANUAL"
+                      },
+                      "sender_name": {
+                        "type": "MANUAL"
+                      }
+                    },
+                    "errorHandlingOptions": {
+                      "retryOnFailure": {
+                        "value": false
+                      },
+                      "continueOnFailure": {
+                        "value": false
+                      }
+                    }
+                  },
+                  "nextAction": {
+                    "name": "step_1",
+                    "type": "PIECE",
+                    "valid": true,
+                    "settings": {
+                      "input": {
+                        "prompt": "You are a an agent that will send daily crypto updates",
+                        "aiModel": "openai-gpt-4.1-nano",
+                        "maxSteps": 20,
+                        "agentTools": [],
+                        "structuredOutput": []
+                      },
+                      "pieceName": "@activepieces/piece-agent",
+                      "actionName": "run_agent",
+                      "sampleData": {},
+                      "pieceVersion": "~0.3.4",
+                      "propertySettings": {
+                        "prompt": {
+                          "type": "MANUAL"
+                        },
+                        "aiModel": {
+                          "type": "MANUAL"
+                        },
+                        "maxSteps": {
+                          "type": "MANUAL"
+                        },
+                        "agentTools": {
+                          "type": "MANUAL"
+                        },
+                        "structuredOutput": {
+                          "type": "MANUAL"
+                        }
+                      },
+                      "errorHandlingOptions": {
+                        "retryOnFailure": {
+                          "value": false
+                        },
+                        "continueOnFailure": {
+                          "value": false
+                        }
+                      }
+                    },
+                    "displayName": "Run Agent"
+                  },
+                  "displayName": "Send Email"
+                },
+                "displayName": "Build MIME"
+              },
+              "displayName": "Format HTML"
+            },
+            "displayName": "OpenAI_Responses_API"
+          },
+          "displayName": "Format Prompt"
+        },
+        "displayName": "coingecko_json"
+      }
+    },
+    "valid": true,
+    "agentIds": [],
+    "connectionIds": [
+      "jKnmPenb7Cs3HGEmIGUuQ"
+    ],
+    "schemaVersion": "8",
+    "backupFiles": null
+  },
+  "blogUrl": ""
+}
